@@ -1,1 +1,938 @@
-<!doctype html><html lang="ko"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="theme-color" content="#237950"/><title>문장 탐험대 · 나의 문장 탐험</title></head><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>문장 탐험대: 언어의 숲을 구하라!</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b211d;color:#edf5d7;font-family:system-ui,sans-serif}
+main{max-width:1120px;margin:auto;padding:24px 16px}
+header{display:flex;justify-content:space-between;align-items:center}
+h1{font-size:clamp(21px,4vw,34px);margin:16px 0 8px}
+p{line-height:1.7}
+.muted{color:#a2baa6;font-size:13px}
+.brand{color:#c5eb8c;font-weight:800;letter-spacing:2px}
+.hud{margin-top:24px;display:grid;grid-template-columns:1.2fr 1fr 1fr auto;gap:12px;padding:16px;background:#213c2f;border:1px solid #496047;border-radius:14px 14px 0 0}
+.hud small{display:block;color:#abc4a2;font-size:11px;margin-bottom:6px}
+.hud b{font-size:17px}
+.bar{height:5px;background:#445940;border-radius:4px;margin-top:9px;overflow:hidden}
+.bar i{display:block;height:100%;background:#cbed83;width:0}
+.stage{position:relative;border:1px solid #496047;border-top:0;border-radius:0 0 14px 14px;overflow:hidden}
+canvas{display:block;width:100%;aspect-ratio:1100/530;background:#345b3d}
+.shade{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:12px;background:#081d18c9;backdrop-filter:blur(4px)}
+.hidden{display:none!important}
+.card{background:#f1f2dc;color:#243b29;border-radius:18px;padding:26px;max-width:600px;max-height:100%;overflow:auto;text-align:center;box-shadow:0 15px 50px #0005}
+.card h2{font-size:25px;margin:10px 0}
+.card p{font-size:14px}
+.eyebrow{font-size:11px;letter-spacing:2px;color:#668053;font-weight:800}
+button{font:inherit;cursor:pointer;border:0;border-radius:8px;padding:11px 17px;background:#d2ec9c;color:#223e2b;font-weight:700}
+button:focus-visible{outline:3px solid #d8a643;outline-offset:3px}
+.primary{background:#2d5137;color:#f0f8dc;margin-top:12px}
+.options{display:grid;gap:8px;margin:16px 0}
+.option{background:#fffef1;color:#2a442f;border:1px solid #b5c5a2;text-align:left;font-weight:500}
+.option:disabled{opacity:.5}
+.option.wrong{background:#f9d9c8}
+.option.correct{background:#cbe5ae;opacity:1}
+#question{font-size:19px;white-space:pre-line;line-height:1.65;font-weight:700}
+#feedback{font-size:13px;line-height:1.6;text-align:left;min-height:26px}
+#toast{position:absolute;top:15px;left:50%;transform:translateX(-50%);padding:10px 20px;border-radius:30px;background:#ecf9cb;color:#25452e;font-size:13px;white-space:nowrap;pointer-events:none}
+.controls{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap;margin:16px 0}
+.touch{display:flex;gap:8px}
+.touch button{touch-action:none;user-select:none;min-width:54px;min-height:48px;background:#294932;color:#eaf5d4;border:1px solid #5f7750}
+.touch button:last-child{margin-left:14px}
+.tiers{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.tier{border:1px solid #3a573e;color:#8fa68b;border-radius:12px;padding:15px;font-size:12px}
+.tier b{display:block;font-size:15px;margin:7px 0}
+.tier.active{color:#e8f5cd;background:#29452f;border-color:#d0e994}
+footer{text-align:center;font-size:11px;color:#8ba384;margin:24px}
+kbd{border:1px solid #5c7150;padding:3px 6px;border-radius:4px}
+@media(max-width:640px){
+ main{padding:12px 8px}
+ .hud{padding:11px;gap:8px}
+ .hud b{font-size:13px}
+ .hud small{font-size:10px}
+ .tiers{grid-template-columns:1fr 1fr}
+ canvas{aspect-ratio:4/3}
+ .card{padding:16px}
+ .card h2{font-size:21px}
+ .card p{font-size:12px}
+ #question{font-size:16px}
+ .option{font-size:13px;padding:9px}
+}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="brand">✦ 문장 탐험대</div>
+  <button id="help">? 도움말</button>
+</header>
+<h1>언어의 숲을 구하라!</h1>
+<div class="muted">흩어진 언어 수정을 모으고, 뒤틀린 문장에 생명을 불어넣으세요.</div>
+
+<div class="hud">
+  <div>
+    <small>나의 탐험가</small>
+    <b id="name">🥚 알깨미</b>
+    <div class="bar"><i id="xp"></i></div>
+  </div>
+  <div><small>언어 에너지</small><b><span id="score">0</span> pts</b></div>
+  <div><small>숲 복구 진행도</small><b><span id="done">0</span> / 15</b></div>
+  <button id="pause" aria-label="일시 정지">Ⅱ</button>
+</div>
+
+<div class="stage">
+  <canvas id="game" width="1100" height="530"
+    aria-label="방향키로 이동하고 스페이스로 점프하는 언어의 숲 게임"></canvas>
+  <div id="toast" class="hidden" role="status"></div>
+  <div id="overlay" class="shade"><div id="panel" class="card"></div></div>
+</div>
+
+<div class="controls">
+  <div class="muted">
+    <kbd>←</kbd> <kbd>→</kbd> 이동 &nbsp;
+    <kbd>Space</kbd> 점프 &nbsp; <kbd>P</kbd> 쉬어 가기
+  </div>
+  <div class="touch">
+    <button data-key="left" aria-label="왼쪽 이동">←</button>
+    <button data-key="right" aria-label="오른쪽 이동">→</button>
+    <button data-key="jump">점프 ↑</button>
+  </div>
+</div>
+
+<div class="tiers">
+  <div class="tier active">01 · 0–300 PTS<b>🥚 알깨미</b>기본 이동 · 한 번 점프</div>
+  <div class="tier">02 · 301–800 PTS<b>🐉 아기 글용</b>작은 날개 · 2단 점프</div>
+  <div class="tier">03 · 801–1500 PTS<b>⚔ 문장 기사</b>깃펜 검 · 이동 속도 증가</div>
+  <div class="tier">04 · 1501+ PTS<b>✦ 언어의 수호신</b>빛나는 날개 · 수정 자석</div>
+</div>
+<footer>작은 문장이 만드는 커다란 모험 · SENTENCE EXPLORERS</footer>
+</main>
+
+<script>
+'use strict';
+
+// Questions focus exclusively on sentence elements, agreement, and clear meaning.
+// No questions teach connected or embedded sentence structures.
+const sentenceQuizzes = [
+  {
+    type:'필수 성분 · 보어',kind:'bridge',
+    question:'얼음이 녹아 (    ) 되었다.',
+    options:['물이','물을','물은'],answer:0,
+    explanation:'「되다」 앞에는 무엇이 되었는지 나타내는 보어 「물이」가 필요해요.'
+  },
+  {
+    type:'필수 성분 · 목적어',kind:'bridge',
+    question:'민수는 (    ) 읽었다.\n무엇을 읽었는지 밝혀 보세요.',
+    options:['도서관에서','책을','조용히'],answer:1,
+    explanation:'「책을」은 무엇을 읽었는지 알려 주는 목적어예요.'
+  },
+  {
+    type:'부사어와 서술어의 호응',kind:'monster',
+    question:'나는 결코 약속을 (    ).',
+    options:['잊겠다','잊었다','잊지 않겠다'],answer:2,
+    explanation:'「결코」는 「않다」 같은 부정 표현과 어울려요.'
+  },
+  {
+    type:'목적어와 서술어의 호응',kind:'monster',
+    question:'아이들이 신나는 춤을 (    ).',
+    options:['춘다','부른다','읽는다'],answer:0,
+    explanation:'춤은 「추다」와 어울려요. 노래는 「부르다」와 어울려요.'
+  },
+  {
+    type:'주어와 서술어의 호응',kind:'monster',
+    question:'내 꿈은 우주 비행사가 (    ).',
+    options:['된다','되는 것이다','되었다'],answer:1,
+    explanation:'주어 「내 꿈은」에 맞게 「되는 것이다」로 끝내요.'
+  },
+  {
+    type:'중의성 해소',kind:'fog',
+    question:'「나는 엄마보다 사과를 더 좋아한다.」\n엄마보다 내가 사과를 더 좋아한다는 뜻은?',
+    options:[
+      '엄마가 사과를 좋아하는 정도보다 내가 사과를 좋아하는 정도가 더 크다.',
+      '나는 엄마보다 사과를 더 좋아한다.',
+      '나는 사과보다 엄마를 더 좋아한다.'
+    ],answer:0,
+    explanation:'좋아하는 정도를 비교한다고 분명히 밝혔어요.'
+  },
+  {
+    type:'필수 성분 · 보어',kind:'bridge',
+    question:'수진이는 훌륭한 (    ) 되었다.',
+    options:['의사를','의사로부터','의사가'],answer:2,
+    explanation:'「되었다」에 필요한 보어는 「의사가」예요.'
+  },
+  {
+    type:'부사어와 서술어의 호응',kind:'monster',
+    question:'그 소식은 별로 (    ).',
+    options:['기뻤다','기쁘지 않았다','기쁘겠다'],answer:1,
+    explanation:'「별로」는 부정 표현과 어울려요.'
+  },
+  {
+    type:'목적어와 서술어의 호응',kind:'monster',
+    question:'나는 친구에게 안부를 (    ).',
+    options:['물었다','먹었다','탔다'],answer:0,
+    explanation:'안부는 「묻다」와 어울려요.'
+  },
+  {
+    type:'주어와 서술어의 호응',kind:'monster',
+    question:'나의 장점은 마음씨가 (    ).',
+    options:['착하다','착했다','착하다는 점이다'],answer:2,
+    explanation:'「나의 장점은」에 맞는 끝맺음은 「착하다는 점이다」예요.'
+  },
+  {
+    type:'중의성 해소',kind:'fog',
+    question:'「윤경이는 혜성이와 영주를 불렀다.」\n윤경이가 두 사람 모두를 부른 뜻은?',
+    options:[
+      '윤경이와 혜성이가 영주를 불렀다.',
+      '윤경이는 혜성이를 불렀다. 윤경이는 영주도 불렀다.',
+      '혜성이가 윤경이와 영주를 불렀다.'
+    ],answer:1,
+    explanation:'짧은 두 문장으로 누가 누구를 불렀는지 분명히 했어요.'
+  },
+  {
+    type:'필수 성분 · 목적어',kind:'bridge',
+    question:'화가는 (    ) 그렸다.\n그림의 대상을 밝혀 보세요.',
+    options:['천천히','어제','풍경을'],answer:2,
+    explanation:'「풍경을」은 무엇을 그렸는지 알려 주는 목적어예요.'
+  },
+  {
+    type:'부사어와 서술어의 호응',kind:'monster',
+    question:'나는 반드시 약속을 (    ).',
+    options:['지키겠다','지킬지도 모른다','지킬까?'],answer:0,
+    explanation:'「반드시」에는 확실한 의지를 나타내는 「지키겠다」가 어울려요.'
+  },
+  {
+    type:'중의성 해소',kind:'fog',
+    question:'「슬기가 보고 싶은 친구가 많다.」\n친구들이 슬기를 그리워한다는 뜻은?',
+    options:[
+      '슬기는 많은 친구를 보고 싶어 한다.',
+      '많은 친구가 슬기를 보고 싶어 한다.',
+      '슬기는 친구가 많다.'
+    ],answer:1,
+    explanation:'「많은 친구가」를 주어로 밝혀 누가 누구를 보고 싶어 하는지 분명히 했어요.'
+  },
+  {
+    type:'중의성 해소',kind:'fog',
+    question:'「종현이는 어제 고향에서 온 혜리를 만났다.」\n만난 날이 어제임을 분명히 하면?',
+    options:[
+      '혜리는 어제 고향에서 왔다.',
+      '종현이는 고향에서 어제 온 혜리를 만났다.',
+      '종현이는 고향에서 온 혜리를 어제 만났다.'
+    ],answer:2,
+    explanation:'「어제」를 「만났다」 가까이에 놓아 만난 날을 분명히 해요.'
+  }
+];
+
+const $ = id => document.getElementById(id);
+const canvas = $('game');
+const ctx = canvas.getContext('2d');
+const names = ['알깨미','아기 글용','문장 기사','언어의 수호신'];
+const icons = ['🥚','🐉','⚔','✦'];
+const thresholds = [301,801,1501,Infinity];
+const keys = {left:false,right:false};
+
+const Player = {
+  x:75,y:350,w:34,h:46,vx:0,vy:0,
+  jumps:0,grounded:false,state:'idle',safe:0
+};
+
+let mode='start',score=0,tier=0,done=0,errors=0;
+let camera=0,clock=0,checkpoint=75;
+let platforms=[],gems=[],obstacles=[],particles=[];
+let active=null,last=0,accumulator=0,toastTime=0;
+
+function clearKeys(){
+  keys.left=keys.right=false;
+}
+
+function modal(html,state){
+  mode=state;
+  clearKeys();
+  $('panel').innerHTML=html;
+  $('overlay').classList.remove('hidden');
+  requestAnimationFrame(() => $('panel').querySelector('button')?.focus());
+}
+
+function button(text,fn){
+  const b=document.createElement('button');
+  b.className='primary';
+  b.textContent=text;
+  b.onclick=fn;
+  $('panel').appendChild(b);
+}
+
+function resume(){
+  clearKeys();
+  mode='play';
+  $('overlay').classList.add('hidden');
+  $('pause').textContent='Ⅱ';
+}
+
+function startScreen(){
+  modal(`
+    <div class="eyebrow">숲에서 온 작은 초대장</div>
+    <h2>모든 모험은<br>한 문장에서 시작돼요.</h2>
+    <p>언어 수정 <b>+10점</b> · 문장 미션 <b>+100점</b><br>
+    15개의 문장을 고치고 숲을 구해 주세요.</p>
+    <p>← → / A D 이동 · Space / ↑ / W 점프<br>
+    아기 글용부터 공중에서 한 번 더 점프!<br>
+    가시는 뛰어넘어요. 떨어져도 가까운 깃발에서 다시 출발해요.</p>
+  `,'start');
+  button('숲으로 출발하기 →',reset);
+}
+
+function reset(){
+  score=tier=done=errors=0;
+  checkpoint=75;
+  camera=clock=0;
+  gems=[];
+  platforms=[];
+  obstacles=[];
+  particles=[];
+  Object.assign(Player,{
+    x:75,y:350,vx:0,vy:0,jumps:0,grounded:false,safe:0
+  });
+
+  for(let i=0;i<15;i++){
+    const x=i*650;
+    const kind=sentenceQuizzes[i].kind;
+    platforms.push({x,y:450,w:kind==='bridge'?435:650,h:100});
+    if(kind==='bridge'){
+      platforms.push({x:x+555,y:450,w:95,h:100});
+    }
+    platforms.push({x:x+200,y:350,w:110,h:16});
+    obstacles.push({
+      x:x+435,w:kind==='bridge'?120:50,kind,index:i,done:false
+    });
+    for(let j=0;j<6;j++){
+      gems.push({
+        x:x+115+j*42,
+        y:j>=2&&j<=4?305:400,
+        collected:false
+      });
+    }
+  }
+  platforms.push({x:9750,y:450,w:500,h:100});
+  hud();
+  resume();
+}
+
+function hud(){
+  $('score').textContent=score;
+  $('done').textContent=done;
+  $('name').textContent=icons[tier]+' '+names[tier];
+  const low=tier?thresholds[tier-1]:0;
+  $('xp').style.width=(
+    tier===3 ? 100 : Math.max(0,(score-low)/(thresholds[tier]-low)*100)
+  )+'%';
+  document.querySelectorAll('.tier').forEach((e,i)=>{
+    e.classList.toggle('active',i===tier);
+  });
+}
+
+function burst(x,y,n=20){
+  for(let i=0;i<n;i++){
+    particles.push({
+      x,y,
+      vx:(Math.random()-.5)*6,
+      vy:-Math.random()*6,
+      life:1,
+      color:['#e8f39a','#f0cd7c','#b0e5d4'][i%3]
+    });
+  }
+}
+
+function evolve(){
+  const next=score>=1501?3:score>=801?2:score>=301?1:0;
+  if(next<=tier)return;
+  tier=next;
+  hud();
+  burst(Player.x,Player.y,80);
+  const descriptions=[
+    '',
+    '작은 날개가 돋아났어요!<br>공중에서 한 번 더 점프할 수 있어요.',
+    '빛나는 깃펜 검을 얻었어요!<br>2단 점프와 더 빠른 이동을 사용할 수 있어요.',
+    '숲의 빛이 여러분을 따라옵니다!<br>가까운 언어 수정을 끌어당겨요.'
+  ];
+  modal(`
+    <div class="eyebrow">✦ EVOLUTION ✦</div>
+    <h2>${icons[tier]} ${names[tier]}으로 진화!</h2>
+    <p>${descriptions[tier]}</p>
+  `,'evolution');
+  button('새로운 힘으로 계속 →',resume);
+}
+
+function quiz(o){
+  active=o;
+  const q=sentenceQuizzes[o.index];
+  const titles={
+    bridge:'끊어진 문장 다리',
+    monster:'문장 몬스터 정화',
+    fog:'의미의 안개 걷기'
+  };
+  modal(`
+    <div class="eyebrow">MISSION ${o.index+1} / ${q.type}</div>
+    <h2>${titles[o.kind]}</h2>
+    <div id="question"></div>
+    <div id="answers" class="options"></div>
+    <div id="feedback" role="status" aria-live="polite">
+      알맞은 답을 골라 주세요. 틀려도 다시 도전할 수 있어요.
+    </div>
+  `,'quiz');
+  $('question').textContent=q.question;
+  q.options.forEach((text,i)=>{
+    const b=document.createElement('button');
+    b.className='option';
+    b.textContent=(i+1)+'. '+text;
+    b.onclick=()=>answer(i,b);
+    $('answers').appendChild(b);
+  });
+}
+
+function answer(i,b){
+  if(mode!=='quiz'||active.done)return;
+  const q=sentenceQuizzes[active.index];
+
+  if(i!==q.answer){
+    errors++;
+    b.disabled=true;
+    b.classList.add('wrong');
+    const hints={
+      bridge:'무엇이, 무엇을에 해당하는 말을 살펴요.',
+      monster:'앞의 말과 끝의 말이 자연스럽게 어울리는지 살펴요.',
+      fog:'문제에서 말한 뜻과 정확하게 맞는 보기를 찾아요.'
+    };
+    $('feedback').textContent='다시 생각해 볼까요? '+hints[active.kind];
+    return;
+  }
+
+  b.classList.add('correct');
+  document.querySelectorAll('.option').forEach(e=>e.disabled=true);
+  active.done=true;
+  done++;
+  score+=100;
+  checkpoint=active.x+active.w+35;
+  if(active.kind==='bridge'){
+    platforms.push({x:active.x,y:450,w:active.w,h:18});
+  }
+  burst(active.x,390,40);
+  hud();
+  $('feedback').textContent='정답! +100점 · '+q.explanation;
+  button('숲길 계속 걷기 →',()=>{
+    resume();
+    evolve();
+  });
+}
+
+function jump(){
+  if(mode!=='play')return;
+  const p=Player;
+  if(p.grounded||p.jumps<(tier>=1?2:1)){
+    p.vy=-11.8;
+    p.jumps++;
+    p.grounded=false;
+    burst(p.x+17,p.y+46,6);
+  }
+}
+
+function respawn(){
+  Object.assign(Player,{
+    x:checkpoint,y:330,vx:0,vy:0,jumps:0,safe:1.5
+  });
+  $('toast').textContent='괜찮아요! 가까운 깃발에서 다시 출발해요.';
+  $('toast').classList.remove('hidden');
+  toastTime=3;
+}
+
+function update(){
+  if(mode!=='play')return;
+  clock+=1/60;
+  const p=Player;
+  const oldY=p.y;
+  p.safe=Math.max(0,p.safe-1/60);
+  p.vx=(+keys.right-+keys.left)*(tier>=2?5.3:4);
+  p.x=Math.max(0,p.x+p.vx);
+  p.vy=Math.min(15,p.vy+.52);
+  p.y+=p.vy;
+  p.grounded=false;
+
+  // One-way platform collision using the previous bottom position.
+  for(const s of platforms){
+    if(
+      p.x+p.w>s.x && p.x<s.x+s.w &&
+      oldY+p.h<=s.y+2 && p.y+p.h>=s.y && p.vy>=0
+    ){
+      p.y=s.y-p.h;
+      p.vy=0;
+      p.grounded=true;
+      p.jumps=0;
+    }
+  }
+
+  p.state=!p.grounded?'jumping':p.vx?'running':'idle';
+
+  // Full-height triggers prevent skipping required learning challenges.
+  for(const o of obstacles){
+    if(!o.done && p.x+p.w>o.x-65){
+      p.x=Math.min(p.x,o.x-65-p.w+1);
+      quiz(o);
+      return;
+    }
+  }
+
+  for(const g of gems){
+    if(g.collected)continue;
+    const dx=p.x+17-g.x;
+    const dy=p.y+23-g.y;
+    const distance=Math.hypot(dx,dy);
+    if(tier===3 && distance<190){
+      g.x+=dx*.1;
+      g.y+=dy*.1;
+    }
+    if(distance<34){
+      g.collected=true;
+      score+=10;
+      burst(g.x,g.y,10);
+      hud();
+    }
+  }
+
+  // Small spike patches can be jumped over at every evolution tier.
+  for(let i=0;i<15;i++){
+    const x=i*650+350;
+    if(
+      p.safe<=0 && p.x+p.w>x && p.x<x+36 &&
+      p.y+p.h>435 && p.y<455
+    ){
+      respawn();
+      break;
+    }
+  }
+
+  if(p.y>620)respawn();
+  camera=Math.max(0,Math.min(9250,p.x-245));
+  evolve();
+
+  if(p.x>9850 && done===15 && mode==='play'){
+    modal(`
+      <div class="eyebrow">FOREST RESTORED · 100%</div>
+      <h2>✦ 언어의 숲을 구했어요!</h2>
+      <p>15개의 문장이 빛을 되찾았어요.<br>
+      최종 에너지 <b>${score}점</b> · ${names[tier]}<br>
+      다시 생각한 횟수 ${errors}회 — 그만큼 더 배웠어요!</p>
+    `,'win');
+    button('새로운 탐험 시작하기',reset);
+  }
+}
+
+function ellipse(x,y,rx,ry,color){
+  ctx.fillStyle=color;
+  ctx.beginPath();
+  ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);
+  ctx.fill();
+}
+
+function drawPlayer(){
+  const p=Player;
+  ctx.save();
+  const bob=p.grounded&&p.vx?Math.sin(clock*12)*2:0;
+  ctx.translate(p.x-camera+17,p.y+24+bob);
+
+  if(p.safe>0 && Math.floor(clock*15)%2)ctx.globalAlpha=.4;
+
+  // Celestial aura and wings.
+  if(tier===3){
+    const g=ctx.createRadialGradient(0,0,4,0,0,65);
+    g.addColorStop(0,'#efffa788');
+    g.addColorStop(1,'#efffa700');
+    ctx.fillStyle=g;
+    ctx.fillRect(-65,-65,130,130);
+    ellipse(-28,0,25,10,'#e3f8b8');
+    ellipse(28,0,25,10,'#e3f8b8');
+  }
+
+  // Dragon wings and tail.
+  if(tier===1){
+    ctx.fillStyle='#77ba75';
+    ctx.beginPath();
+    ctx.moveTo(-8,8);
+    ctx.lineTo(-34,-19);
+    ctx.lineTo(-30,11);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(8,8);
+    ctx.lineTo(34,-19);
+    ctx.lineTo(30,11);
+    ctx.fill();
+    ellipse(-19,17,17,6,'#77ba75');
+  }
+
+  ellipse(-9,22,8,4,'#e4be78');
+  ellipse(9,22,8,4,'#e4be78');
+  ellipse(0,0,19,25,['#fff0ce','#a6df88','#bed2c7','#f0ffcf'][tier]);
+
+  // Egg shell.
+  if(tier===0){
+    ctx.strokeStyle='#ccad7d';
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(-16,6);
+    ctx.lineTo(-7,1);
+    ctx.lineTo(1,8);
+    ctx.lineTo(10,2);
+    ctx.lineTo(17,7);
+    ctx.stroke();
+  }
+
+  // Knight helmet and glowing quill sword.
+  if(tier===2){
+    ctx.fillStyle='#5a7e76';
+    ctx.fillRect(-19,-17,38,14);
+    ctx.fillStyle='#e7f0cb';
+    ctx.fillRect(-14,-12,28,4);
+    ctx.shadowBlur=12;
+    ctx.shadowColor='#e6ff94';
+    ctx.strokeStyle='#e8ffb0';
+    ctx.lineWidth=4;
+    ctx.beginPath();
+    ctx.moveTo(22,18);
+    ctx.lineTo(38,-24);
+    ctx.stroke();
+    ctx.fillStyle='#f7ffca';
+    ctx.beginPath();
+    ctx.moveTo(38,-24);
+    ctx.lineTo(47,-20);
+    ctx.lineTo(30,-5);
+    ctx.fill();
+    ctx.shadowBlur=0;
+  }
+
+  if(tier===3){
+    ctx.fillStyle='#e9cb77';
+    ctx.beginPath();
+    ctx.moveTo(-16,-20);
+    ctx.lineTo(-20,-38);
+    ctx.lineTo(-4,-28);
+    ctx.lineTo(5,-39);
+    ctx.lineTo(14,-23);
+    ctx.fill();
+  }
+
+  ellipse(-7,-5,2.4,3.5,'#284b34');
+  ellipse(7,-5,2.4,3.5,'#284b34');
+  ellipse(-12,1,4,2,'#edb1a0');
+  ellipse(12,1,4,2,'#edb1a0');
+  ctx.strokeStyle='#547544';
+  ctx.lineWidth=1.7;
+  ctx.beginPath();
+  ctx.arc(0,2,5,0,Math.PI);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function draw(){
+  const bg=ctx.createLinearGradient(0,0,0,530);
+  bg.addColorStop(0,'#153e35');
+  bg.addColorStop(1,'#7f9b68');
+  ctx.fillStyle=bg;
+  ctx.fillRect(0,0,1100,530);
+  ellipse(855,96,54,54,'#e6edbb');
+
+  // Three parallax forest layers.
+  for(let layer=0;layer<3;layer++){
+    const space=[210,170,230][layer];
+    for(let i=-1;i<9;i++){
+      const x=i*space-camera*[.12,.3,.55][layer]%space;
+      const color=['#27533f','#2c5c42','#345f3e'][layer];
+      ctx.fillStyle=color;
+      ctx.fillRect(x+36,70,24+layer*4,430);
+      ellipse(x+48,80-layer*20,82,110,color);
+      ellipse(x-8,127,62,66,color);
+    }
+  }
+
+  ctx.fillStyle='#dae7a922';
+  ctx.beginPath();
+  ctx.moveTo(760,0);
+  ctx.lineTo(900,0);
+  ctx.lineTo(600,450);
+  ctx.lineTo(450,450);
+  ctx.fill();
+
+  for(let i=0;i<25;i++){
+    ellipse(
+      (i*97-camera*.2+Math.sin(clock+i)*18)%1120,
+      75+i*41%330+Math.sin(clock+i)*10,
+      1.7,1.7,'#e9f2b499'
+    );
+  }
+
+  for(const p of platforms){
+    const x=p.x-camera;
+    if(x>1120||x+p.w<0)continue;
+    ctx.fillStyle='#3f4f31';
+    ctx.fillRect(x,p.y,p.w,p.h);
+    ctx.fillStyle='#a6c47c';
+    ctx.fillRect(x,p.y,p.w,7);
+    ctx.fillStyle='#718e50';
+    ctx.fillRect(x,p.y+7,p.w,7);
+    for(let j=15;j<p.w;j+=35){
+      ctx.fillStyle='#727a48';
+      ctx.fillRect(x+j,p.y+29,7,5);
+    }
+  }
+
+  for(let i=0;i<15;i++){
+    const x=i*650+350-camera;
+    if(x<-60||x>1140)continue;
+    ctx.fillStyle='#debba0';
+    for(let j=0;j<3;j++){
+      ctx.beginPath();
+      ctx.moveTo(x+j*12,450);
+      ctx.lineTo(x+j*12+6,435);
+      ctx.lineTo(x+j*12+12,450);
+      ctx.fill();
+    }
+  }
+
+  for(let i=0;i<=15;i++){
+    const x=i*650+45-camera;
+    ctx.fillStyle='#c8d7a6';
+    ctx.fillRect(x,414,3,36);
+    ctx.fillStyle='#e9c574';
+    ctx.fillRect(x+3,414,18,12);
+  }
+
+  for(const g of gems){
+    if(g.collected||Math.abs(g.x-camera-550)>590)continue;
+    const x=g.x-camera;
+    const y=g.y+Math.sin(clock*3+g.x)*4;
+    ctx.save();
+    ctx.shadowColor='#e1ff9a';
+    ctx.shadowBlur=15;
+    ctx.fillStyle='#d1f6a7';
+    ctx.beginPath();
+    ctx.moveTo(x,y-10);
+    ctx.lineTo(x+7,y);
+    ctx.lineTo(x,y+10);
+    ctx.lineTo(x-7,y);
+    ctx.fill();
+    ctx.restore();
+    ctx.fillStyle='#ffffdf';
+    ctx.fillRect(x-1,y-6,2,7);
+  }
+
+  for(const o of obstacles){
+    const x=o.x-camera;
+    if(x<-160||x>1150)continue;
+
+    if(o.done){
+      if(o.kind==='bridge'){
+        ctx.fillStyle='#d6b478';
+        for(let j=0;j<120;j+=15)ctx.fillRect(x+j,450,13,13);
+      }
+      continue;
+    }
+
+    if(o.kind==='monster'){
+      ellipse(x+25,425+Math.sin(clock*3)*3,29,25,'#9383a3');
+      ellipse(x+15,416,5,6,'#fff3d8');
+      ellipse(x+35,416,5,6,'#fff3d8');
+      ellipse(x+16,417,2,3,'#40384b');
+      ellipse(x+34,417,2,3,'#40384b');
+      ctx.fillStyle='#fff2ca';
+      ctx.font='bold 25px sans-serif';
+      ctx.fillText('?',x+18,389);
+    }else if(o.kind==='fog'){
+      for(let j=0;j<5;j++){
+        ellipse(
+          x+25+Math.sin(clock+j)*14,
+          422-j*21,37,27,'#d2e3cd77'
+        );
+      }
+      ctx.fillStyle='#fff5dd';
+      ctx.font='25px sans-serif';
+      ctx.fillText('…',x+12,377);
+    }else{
+      ctx.strokeStyle='#d9b17a';
+      ctx.lineWidth=4;
+      ctx.beginPath();
+      ctx.moveTo(x,450);
+      ctx.lineTo(x+20,466);
+      ctx.moveTo(x+120,450);
+      ctx.lineTo(x+100,466);
+      ctx.stroke();
+    }
+
+    ctx.textAlign='center';
+    ctx.font='12px sans-serif';
+    ctx.fillStyle='#f5f1d7';
+    ctx.fillText(
+      {bridge:'문장 다리',monster:'문장 몬스터',fog:'안개 관문'}[o.kind],
+      x+o.w/2,338
+    );
+    ctx.textAlign='left';
+  }
+
+  const end=9910-camera;
+  if(end<1150){
+    ctx.fillStyle='#c9e79f';
+    ctx.fillRect(end,290,8,160);
+    ellipse(end+4,280,45,45,'#c9e79f');
+    ctx.fillStyle='#345636';
+    ctx.font='bold 27px sans-serif';
+    ctx.fillText('文',end-10,290);
+  }
+
+  drawPlayer();
+
+  for(const p of particles){
+    ctx.globalAlpha=Math.max(0,p.life);
+    ctx.fillStyle=p.color;
+    ctx.fillRect(p.x-camera,p.y,4,6);
+  }
+  ctx.globalAlpha=1;
+  ctx.fillStyle='#eef3d6aa';
+  ctx.font='12px sans-serif';
+  ctx.fillText(
+    '언어의 숲 · '+Math.min(15,Math.floor(Player.x/650)+1)+' 구역',
+    24,28
+  );
+}
+
+// Fixed 60 Hz physics independent of display refresh rate.
+function GameLoop(t){
+  const dt=Math.min((t-last)/1000||0,.05);
+  last=t;
+
+  if(mode==='play'){
+    accumulator+=dt;
+    while(accumulator>=1/60){
+      update();
+      accumulator-=1/60;
+      if(mode!=='play'){
+        accumulator=0;
+        break;
+      }
+    }
+  }else{
+    accumulator=0;
+  }
+
+  // Evolution confetti continues while game physics is paused.
+  if(!['quiz','pause','help'].includes(mode)){
+    for(const p of particles){
+      p.x+=p.vx*dt*60;
+      p.y+=p.vy*dt*60;
+      p.vy+=.08*dt*60;
+      p.life-=dt*.8;
+    }
+    particles=particles.filter(p=>p.life>0);
+  }
+
+  if(toastTime>0){
+    toastTime-=dt;
+    if(toastTime<=0)$('toast').classList.add('hidden');
+  }
+
+  draw();
+  requestAnimationFrame(GameLoop);
+}
+
+function pause(){
+  if(mode==='play'){
+    modal(`
+      <div class="eyebrow">TAKE A BREATH</div>
+      <h2>잠시 쉬어 가요.</h2>
+      <p>숲은 여기서 기다리고 있어요.</p>
+    `,'pause');
+    $('pause').textContent='▶';
+    button('탐험 계속하기 →',resume);
+  }else if(mode==='pause'){
+    resume();
+  }
+}
+
+$('pause').onclick=pause;
+
+$('help').onclick=()=>{
+  if(!['start','play','pause'].includes(mode))return;
+  const before=mode;
+  modal(`
+    <div class="eyebrow">탐험 안내서</div>
+    <h2>문장을 고치면 길이 열려요.</h2>
+    <p>← → / A D 이동 · Space / ↑ / W 점프<br>
+    수정 +10점 · 정답 +100점 · 오답 감점 없음<br>
+    다리: 빠진 말 · 몬스터: 호응 · 안개: 뜻 밝히기<br>
+    301점: 2단 점프 · 801점: 속도 증가 · 1501점: 자석<br>
+    가시는 뛰어넘어요. 떨어져도 점수는 유지돼요.<br>
+    P / Esc: 일시 정지 · 모바일: 아래 버튼</p>
+  `,'help');
+  button('돌아가기',()=>{
+    if(before==='start'){
+      startScreen();
+    }else{
+      resume();
+      if(before==='pause')pause();
+    }
+  });
+};
+
+addEventListener('keydown',e=>{
+  const movement=[
+    'ArrowLeft','ArrowRight','ArrowUp','Space','KeyA','KeyD','KeyW'
+  ];
+  if(movement.includes(e.code)&&e.target.tagName!=='BUTTON'){
+    e.preventDefault();
+  }
+
+  if(['KeyP','Escape'].includes(e.code)&&!e.repeat)pause();
+  if(mode!=='play')return;
+
+  if(['ArrowLeft','KeyA'].includes(e.code))keys.left=true;
+  if(['ArrowRight','KeyD'].includes(e.code))keys.right=true;
+  if(['Space','ArrowUp','KeyW'].includes(e.code)&&!e.repeat){
+    e.preventDefault();
+    jump();
+  }
+});
+
+addEventListener('keyup',e=>{
+  if(['ArrowLeft','KeyA'].includes(e.code))keys.left=false;
+  if(['ArrowRight','KeyD'].includes(e.code))keys.right=false;
+});
+
+addEventListener('blur',()=>{
+  clearKeys();
+  if(mode==='play')pause();
+});
+
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden&&mode==='play')pause();
+});
+
+document.querySelectorAll('[data-key]').forEach(b=>{
+  b.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    b.setPointerCapture(e.pointerId);
+    if(b.dataset.key==='jump'){
+      jump();
+    }else if(mode==='play'){
+      keys[b.dataset.key]=true;
+    }
+  });
+
+  for(const type of ['pointerup','pointercancel','lostpointercapture']){
+    b.addEventListener(type,()=>{
+      if(b.dataset.key!=='jump')keys[b.dataset.key]=false;
+    });
+  }
+});
+
+platforms=[{x:0,y:450,w:1100,h:100}];
+startScreen();
+requestAnimationFrame(GameLoop);
+</script>
+</body>
+</html>
