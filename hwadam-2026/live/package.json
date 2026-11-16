@@ -1,0 +1,1 @@
+{"name":"hwadam-editorial","private":true,"type":"module","scripts":{"build":"node build.mjs","test":"node --test tests/server.test.mjs"},"engines":{"node":">=22.13"}}
