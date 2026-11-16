@@ -1,0 +1,1 @@
+{"name":"hwadam-editorial-2026","private":true,"version":"1.0.0","description":"Google Apps Script school anthology editorial room","scripts":{"test":"node --test tests/server.test.cjs","test:ui":"node tests/ui.test.cjs"},"engines":{"node":">=18"}}
