@@ -1,0 +1,11 @@
+node_modules/
+.clasp.json
+.clasprc.json
+.env
+.env.*
+*.log
+*.zip
+.DS_Store
+# Do not commit student documents, photos, draft downloads or real properties.
+private/
+backups/
