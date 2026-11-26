@@ -1,8 +1,8 @@
 const PAGE = __PAGE__;
 export const CATEGORIES = ['상상과 창작','학교생활 경험','반별 워드클라우드'];
 const MAX_BODY = 180000;
-class HttpError extends Error { constructor(status,message){super(message);this.status=status;} }
-function reject(status,message){throw new HttpError(status,message);}
+class HttpError extends Error { constructor(status,message,code){super(message);this.status=status;this.code=code;} }
+function reject(status,message,code){throw new HttpError(status,message,code);}
 function json(value,status=200){return new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json;charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});}
 async function digest(value){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function equal(a,b){const x=await digest(a),y=await digest(b);let d=0;for(let i=0;i<x.length;i++)d|=x.charCodeAt(i)^y.charCodeAt(i);return d===0;}
@@ -25,6 +25,12 @@ async function admin(request,env,required=true){
 }
 async function invite(store){let row=await store.prepare("SELECT value FROM settings WHERE key = 'room_code'").first();if(!row){const code=crypto.randomUUID().replace(/-/g,'')+crypto.randomUUID().replace(/-/g,'');await store.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('room_code',?)").bind(code).run();row=await store.prepare("SELECT value FROM settings WHERE key = 'room_code'").first();}return row.value;}
 async function editor(request,env){const code=request.headers.get('x-room-code');if(!code||code.length>150)reject(403,'선생님이 공유한 제출 전용 링크로 들어와 주세요.');const row=await db(env).prepare("SELECT value FROM settings WHERE key = 'room_code'").first();if(!row||!await equal(code,row.value))reject(403,'제출 링크가 변경되었거나 올바르지 않습니다. 선생님에게 새 링크를 받아 주세요.');}
+async function intakeState(store,ensure=false){
+ let row=await store.prepare("SELECT value FROM settings WHERE key = 'intake'").first();
+ if(!row&&ensure){await store.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('intake',?)").bind(JSON.stringify({paused:false,version:'initial'})).run();row=await store.prepare("SELECT value FROM settings WHERE key = 'intake'").first();}
+ return row?JSON.parse(row.value):{paused:false,version:'initial'};
+}
+function intakePaused(){reject(423,'현재 원고 접수가 중지되었습니다. 입력한 글은 유지됩니다. 선생님이 접수를 재개한 뒤 다시 제출해 주세요.','SUBMISSIONS_PAUSED');}
 function record(r){const n=r.student_no;return {id:r.id,category:r.category,studentNo:n,grade:n.length===5?n[0]:'',classroom:n.length===5?String(Number(n.slice(1,3))):'',author:r.author,editor:r.editor,title:r.title,content:r.content,status:r.status,included:!!r.included,submitted:r.submitted,updated:r.updated,version:r.version};}
 async function rate(request,store){const now=Math.floor(Date.now()/1000),window=Math.floor(now/3600);const key=await digest('submit:'+window+':'+(request.headers.get('cf-connecting-ip')||'local'));const result=await store.prepare('INSERT INTO request_limits(key,count,expires) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1 RETURNING count').bind(key,now+7200).first();if(result.count>40)reject(429,'제출 요청이 많습니다. 잠시 후 다시 시도하거나 선생님에게 알려 주세요.');await store.prepare('DELETE FROM request_limits WHERE expires < ?').bind(now).run();}
 export default {
@@ -35,14 +41,23 @@ export default {
    if(!path.startsWith('/api/'))return json({error:'페이지를 찾을 수 없습니다.'},404);
    origin(request);
    if(path==='/api/me'&&request.method==='GET'){const isAdmin=await admin(request,env,false);return json({admin:isAdmin,signedIn:!!request.headers.get('oai-authenticated-user-id'),categories:CATEGORIES});}
-   if(path==='/api/room'&&request.method==='POST'){await editor(request,env);return json({ok:true,categories:CATEGORIES});}
+   if(path==='/api/intake'&&request.method==='GET')return json({paused:(await intakeState(db(env))).paused});
+   if(path==='/api/room'&&request.method==='POST'){await editor(request,env);return json({ok:true,categories:CATEGORIES,paused:(await intakeState(db(env))).paused});}
+   if(path==='/api/admin/intake'){
+    await admin(request,env);const store=db(env),current=await intakeState(store,true);
+    if(request.method==='GET')return json(current);
+    if(request.method==='PUT'){const data=await body(request);if(typeof data.paused!=='boolean')reject(400,'접수 중지 설정을 확인해 주세요.');const version=text(data.version,80),next={paused:data.paused,version:crypto.randomUUID(),updated:new Date().toISOString()};
+     const result=await store.prepare("UPDATE settings SET value=? WHERE key='intake' AND json_extract(value,'$.version')=?").bind(JSON.stringify(next),version).run();
+     if(!result.meta.changes)reject(409,'다른 창에서 접수 상태를 변경했습니다. 상태를 다시 확인한 뒤 시도해 주세요.');return json(next);}
+   }
    if(path==='/api/manuscripts'&&request.method==='POST'){
     await editor(request,env);const data=await body(request),fields=validate(data),id=uuid(data.id),store=db(env),hash=await digest(JSON.stringify(fields));
     const existing=await store.prepare('SELECT payload_hash FROM manuscripts WHERE id = ?').bind(id).first();
     if(existing){if(existing.payload_hash!==hash)reject(409,'같은 접수 번호로 다른 내용이 요청되었습니다. 선생님에게 접수 번호를 알려 주세요.');return json({id,duplicate:true});}
+    if((await intakeState(store)).paused)intakePaused();
     await rate(request,store);const now=new Date().toISOString();
-    const result=await store.prepare('INSERT OR IGNORE INTO manuscripts (id,payload_hash,category,student_no,author,editor,title,content,status,submitted,updated,version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,hash,fields.category,fields.studentNo,fields.author,fields.editor,fields.title,fields.content,'검토 대기',now,now,crypto.randomUUID()).run();
-    if(!result.meta.changes){const prior=await store.prepare('SELECT payload_hash FROM manuscripts WHERE id = ?').bind(id).first();if(prior?.payload_hash!==hash)reject(409,'접수 번호가 충돌했습니다. 선생님에게 알려 주세요.');}
+    const result=await store.prepare('INSERT OR IGNORE INTO manuscripts (id,payload_hash,category,student_no,author,editor,title,content,status,submitted,updated,version) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key=\'intake\' AND json_extract(value,\'$.paused\')=1)').bind(id,hash,fields.category,fields.studentNo,fields.author,fields.editor,fields.title,fields.content,'검토 대기',now,now,crypto.randomUUID()).run();
+    if(!result.meta.changes){const prior=await store.prepare('SELECT payload_hash FROM manuscripts WHERE id = ?').bind(id).first();if(!prior)intakePaused();if(prior.payload_hash!==hash)reject(409,'접수 번호가 충돌했습니다. 선생님에게 알려 주세요.');}
     return json({id,duplicate:!result.meta.changes},result.meta.changes?201:200);
    }
    if(path==='/api/admin/invite'){
@@ -67,6 +82,6 @@ export default {
     return json(record(await store.prepare('SELECT * FROM manuscripts WHERE id=?').bind(id).first()));
    }
    return json({error:'지원하지 않는 요청입니다.'},405);
-  }catch(e){if(e instanceof HttpError)return json({error:e.message},e.status);console.error('화담집 저장소 요청 실패',e?.name||'Error');return json({error:'요청을 처리하지 못했습니다. 입력한 내용은 유지됩니다. 잠시 후 다시 시도해 주세요.'},503);}
+  }catch(e){if(e instanceof HttpError)return json({error:e.message,...(e.code?{code:e.code}:{})},e.status);console.error('화담집 저장소 요청 실패',e?.name||'Error');return json({error:'요청을 처리하지 못했습니다. 입력한 내용은 유지됩니다. 잠시 후 다시 시도해 주세요.'},503);}
  }
 };
